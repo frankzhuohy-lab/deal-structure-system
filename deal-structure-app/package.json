@@ -1,0 +1,35 @@
+{
+  "name": "deal-structure-app",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "server": "node server/index.cjs",
+    "start": "node server/index.cjs",
+    "dev:all": "concurrently \"node server/index.js\" \"npx vite\""
+  },
+  "dependencies": {
+    "@types/dagre": "^0.7.54",
+    "@xyflow/react": "^12",
+    "better-sqlite3": "^11",
+    "concurrently": "^9",
+    "dagre": "^0.8.5",
+    "express": "^4",
+    "lucide-react": "^0.500",
+    "react": "^18",
+    "react-dom": "^18",
+    "uuid": "^10",
+    "zustand": "^5"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@vitejs/plugin-react": "^4",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vite": "^6"
+  }
+}

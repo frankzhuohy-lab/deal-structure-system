@@ -1,0 +1,12 @@
+const express = require('express');
+const path = require('path');
+const projectsRouter = require('./routes/projects.cjs');
+const aiRouter = require('./routes/ai.cjs');
+const app = express();
+const PORT = process.env.PORT || 3456;
+app.use(express.json({ limit: '1mb' }));
+app.use(express.static(path.join(__dirname, '..', 'dist')));
+app.use('/api/projects', projectsRouter);
+app.use('/api/ai', aiRouter);
+app.get('*', (req, res) => { res.sendFile(path.join(__dirname, '..', 'dist', 'index.html')); });
+app.listen(PORT, () => console.log(`🚀 交易结构图生成器 http://localhost:${PORT}`));
