@@ -29,17 +29,17 @@ export default function InputPanel({ entities, setEntities, relations, setRelati
         setEntities(r.entities)
         setRelations(r.relations)
       } else {
-        const local = parseText(aiText)
-        if (local.entities.length) {
-          setEntities(local.entities); setRelations(local.relations)
-          setAiError('AI未识别到实体，已使用本地解析')
-        }
+        throw new Error('AI未识别到实体')
       }
     } catch (err: any) {
-      setAiError(err.message || 'AI解析失败')
       const local = parseText(aiText)
       if (local.entities.length) {
         setEntities(local.entities); setRelations(local.relations)
+        setAiError('AI不可用，已用本地解析（角色标注较粗，请检查）')
+      } else {
+        // 绝不静默保留旧模板：清空画布并给出明确提示
+        setEntities([]); setRelations([])
+        setAiError('未能识别任何交易主体，画布已清空。请用"角色：企业名"格式描述，或手动添加主体')
       }
     } finally {
       setAiLoading(false)

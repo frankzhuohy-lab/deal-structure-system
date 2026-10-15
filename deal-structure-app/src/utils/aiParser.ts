@@ -57,7 +57,45 @@ export function parseText(text: string): { entities: Entity[]; relations: Relati
       }
     }
   }
-  return { entities, relations: autoGen(entities) }
+  // 兜底：公司名提取（"中鹏保理将…转让给皖信投资"这类自由文本）
+  // 方法：按标点切 clause → 找组织后缀 → 向左越过名称字符（遇动词/介词停止）
+  if (!entities.length) {
+    const SUFFIXES = ['有限责任公司', '股份有限公司', '公司', '集团', '投资', '保理', '控股',
+      '银行', '信托', '基金', '证券', '租赁', '担保', '国资', '国投', '城投', '产投', '资本', '资管', '财务']
+    const NAME_CHAR = /[一-龥A-Za-z0-9（）()]/
+    const STOP_CHAR = /[将把与和由向从的在为对以了并及被让给提供连带]/
+    const found: string[] = []
+    for (const clause of text.split(/[，。、；：:！？\s]+/)) {
+      for (const suf of SUFFIXES) {
+        let from = 0
+        while (true) {
+          const i = clause.indexOf(suf, from)
+          if (i < 0) break
+          let j = i - 1
+          while (j >= 0 && NAME_CHAR.test(clause[j]) && !STOP_CHAR.test(clause[j])
+                 && i - j < 22) j--
+          const n = clause.slice(j + 1, i + suf.length).trim()
+          if (n.length >= 4 && !found.includes(n)) found.push(n)
+          from = i + suf.length
+        }
+      }
+    }
+    // 去包含：保留较长名（避免"碧桂园地产集团"+"碧桂园地产集团有限公司"并存）
+    const uniq = found.filter(a => !found.some(b => b !== a && b.includes(a)))
+    const roleHints: [RegExp, string][] = [
+      [/担保|保证|增信/, '担保方'], [/债务|付款|还款义务/, '核心债务人'],
+      [/受让|收购|买方|投资/, '受让方/投资人'], [/转让|融资|卖方|发起/, '融资方/转让方'],
+    ]
+    for (const n of uniq.slice(0, 20)) {
+      let role = '交易主体'
+      for (const [re, r] of roleHints) {
+        const idx = text.indexOf(n)
+        if (idx >= 0 && re.test(text.slice(Math.max(0, idx - 12), idx + n.length + 12))) { role = r; break }
+      }
+      entities.push({ id: String(id++), name: n, role, type: 'party' })
+    }
+  }
+  return { entities, relations: entities.length ? autoGen(entities) : [] }
 }
 
 function autoGen(es: Entity[]): Relation[] {

@@ -1,17 +1,68 @@
 const express = require('express');
 const router = express.Router();
 
-const LLM_URL = process.env.LLM_URL || 'http://192.168.50.148:8080/v1/completions';
+// 配置（环境变量优先）：
+//   新模式（OpenAI 兼容 chat completions）：
+//     LLM_BASE_URL=https://api.deepseek.com/v1  LLM_API_KEY=sk-...  LLM_MODEL=deepseek-chat
+//   旧模式（llama.cpp /v1/completions）：
+//     LLM_URL=http://192.168.50.148:8080/v1/completions
+const LLM_BASE_URL = (process.env.LLM_BASE_URL || '').replace(/\/$/, '');
+const LLM_API_KEY = process.env.LLM_API_KEY || '';
+const LLM_MODEL = process.env.LLM_MODEL || '';
+const LLM_URL = process.env.LLM_URL || '';
 const LLM_TIMEOUT = 120000;
 
 function buildPrompt(text) {
-  // Make the format instruction immediately before the JSON prefix
   return `输出交易结构JSON。entities字段:id,name,role,type。relations字段:from,to,label,type。
 type取值:party|asset|guarantee|special。rel type取值:transfer|payment|guarantee|control。
+只输出JSON，不要输出解释、Markdown或代码块。
 
 文本:${text}
 
-{"entities":[{"id":"1","name":"`;
+JSON:`;
+}
+
+async function callLlm(prompt) {
+  if (LLM_BASE_URL) {
+    const r = await fetch(LLM_BASE_URL + '/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(LLM_API_KEY ? { Authorization: 'Bearer ' + LLM_API_KEY } : {}),
+      },
+      body: JSON.stringify({
+        model: LLM_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0,
+        stream: false,
+      }),
+    });
+    if (!r.ok) throw new Error(`LLM error: ${r.status}`);
+    const d = await r.json();
+    return d.choices?.[0]?.message?.content || '';
+  }
+  if (LLM_URL) {
+    const r = await fetch(LLM_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: `输出交易结构JSON。entities字段:id,name,role,type。relations字段:from,to,label,type。
+type取值:party|asset|guarantee|special。rel type取值:transfer|payment|guarantee|control。
+
+文本:${prompt.split('文本:')[1] || prompt}
+
+{"entities":[{"id":"1","name":"`,
+        max_tokens: 2000,
+        temperature: 0,
+        stream: false,
+      }),
+    });
+    if (!r.ok) throw new Error(`LLM error: ${r.status}`);
+    const d = await r.json();
+    const raw = (d.choices?.[0]?.text || '').replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    return '{"entities":[{"id":"1","name":"' + raw;
+  }
+  throw new Error('未配置LLM：请设置 LLM_BASE_URL+LLM_API_KEY+LLM_MODEL 或 LLM_URL');
 }
 
 async function normalizeJson(jsonStr) {
@@ -58,35 +109,9 @@ router.post('/parse', async (req, res) => {
   }
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT);
-
-    const response = await fetch(LLM_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: buildPrompt(text.trim()),
-        max_tokens: 2000,
-        temperature: 0,
-        stream: false
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      throw new Error(`LLM error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    let raw = data.choices?.[0]?.text || '';
-
-    // Strip think tags
-    raw = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-
-    // Add the prefix back to reconstruct full JSON
-    let fullJson = '{"entities":[{"id":"1","name":"' + raw;
+    const responseText = await callLlm(buildPrompt(text.trim()));
+    let fullJson = (responseText || '').trim()
+      .replace(/^```(json)?\s*/i, '').replace(/\s*```$/, '');
 
     // Find balanced JSON object (most outer)
     let balanced = '', depth = 0, start = -1;
